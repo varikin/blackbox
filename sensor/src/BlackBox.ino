@@ -35,9 +35,9 @@ double calculateCatastrophe(double multiplier, double value);
 void setup() {
   Particle.function("catastrophe", introduceCatastrophe);
   if (!bme.begin()) {
-    Particle.publish("Log", "Could not find a valid BME680 sensor, check wiring!");
+    Particle.publish("Log", "Could not find a valid BME680 sensor, check wiring!", PRIVATE);
   } else {
-    Particle.publish("Log", "bme.begin() success =)");
+    Particle.publish("Log", "bme.begin() success =)", PRIVATE);
     // Set up oversampling and filter initialization
     bme.setTemperatureOversampling(BME680_OS_8X);
     bme.setHumidityOversampling(BME680_OS_2X);
@@ -54,7 +54,7 @@ void setup() {
 
 void loop() {
   if (! bme.performReading()) {
-    Particle.publish("Log", "Failed to perform reading :(");
+    Particle.publish("Log", "Failed to perform reading :(", PRIVATE);
   } else {
     temperatureInC = bme.temperature;
     relativeHumidity = bme.humidity;
@@ -82,8 +82,8 @@ void loop() {
       gasResistanceKOhms
     );
 
-    Particle.publish("sensor-data", data, 60, PRIVATE);
-    Particle.publish("catastrophe-timer", String(catastropheTimer), 60, PRIVATE);
+    Particle.publish("sensor-data", data, PRIVATE);
+    Particle.publish("catastrophe-timer", String(catastropheTimer), PRIVATE);
   }
   delay(10 * 1000);
 }
@@ -105,7 +105,7 @@ double getMultiplier() {
   return multiplier;
 }
 
-double calculateCastrophe(double multipler, double value) {
+double calculateCatastrophe(double multipler, double value) {
   return value + (multipler * value);
 }
 

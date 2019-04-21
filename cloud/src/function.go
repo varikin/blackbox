@@ -4,10 +4,8 @@ package blackbox
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
-
-	"github.com/pkg/errors"
+	"fmt"
 )
 
 // PubSubMessage is the payload of a Pub/Sub event. Please refer to the docs for
@@ -25,14 +23,10 @@ type SensorEvent struct {
 }
 
 // DecodeSensorEvent decodes the raw sensor event and converts to a SensorEvent struct
-func DecodeSensorEvent(rawData []byte) (*SensorEvent, error) {
-	var data []byte
-	if _, err := base64.URLEncoding.Decode(data, rawData); err != nil {
-		return nil, errors.Wrap(err, "Failed to decode sensor data")
-	}
+func DecodeSensorEvent(data []byte) (*SensorEvent, error) {
 	var event SensorEvent
 	if err := json.Unmarshal(data, &event); err != nil {
-		return nil, errors.Wrap(err, "Failed to unmarshal sensor data")
+		return nil, fmt.Errorf("Failed to unmarshal sensor data: data=%s, error=%s", string(data), err.Error())
 	}
 	return &event, nil
 }
@@ -42,10 +36,10 @@ func Run(ctx context.Context, m PubSubMessage) error {
 	logger := NewCloudFunctionLogger()
 	event, err := DecodeSensorEvent(m.Data)
 	if err != nil {
-		logger.error("Failed to get sensor data: %v", err)
+		logger.error("Failed to get sensor data: %s", err.Error())
 		return err
 	}
-	logger.log("Got sensor data %v", event)
+	logger.log("Got sensor data %+v", event)
 
 	return nil
 }

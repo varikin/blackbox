@@ -7,8 +7,8 @@ import (
 
 // SimpleLogger is a simple logger
 type SimpleLogger interface {
-	log(v ...interface{})
-	error(v ...interface{})
+	log(msg string, v ...interface{})
+	error(msg string, v ...interface{})
 }
 
 // CloudFunctionLogger manages a stdout and stderr logger for Google Cloud Functions
@@ -25,10 +25,10 @@ func NewCloudFunctionLogger() *CloudFunctionLogger {
 	}
 }
 
-func (cfl *CloudFunctionLogger) log(v ...interface{}) {
-	cfl.logger.Println(v)
+func (cfl *CloudFunctionLogger) log(msg string, v ...interface{}) {
+	cfl.logger.Printf(msg, v...)
 }
 
-func (cfl *CloudFunctionLogger) error(v ...interface{}) {
-	cfl.errorLogger.Println(v)
+func (cfl *CloudFunctionLogger) error(msg string, v ...interface{}) {
+	cfl.errorLogger.Printf(msg, v...)
 }
