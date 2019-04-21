@@ -71,10 +71,10 @@ void loop() {
 
     String data = String::format(
       "{"
-        "\"temperatureInC\":%.2f,"
-        "\"humidityPercentage\":%.2f,"
-        "\"pressureHpa\":%.2f,"
-        "\"gasResistanceKOhms\":%.2f"
+        "\"temperature\":%.2f,"
+        "\"humidity\":%.2f,"
+        "\"pressure\":%.2f,"
+        "\"airQuality\":%.2f"
       "}",
       temperatureInC,
       relativeHumidity,

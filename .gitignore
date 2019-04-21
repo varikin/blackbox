@@ -1,8 +1,8 @@
 .vscode/
-Cloud/account.json
-Cloud/dist/
-Cloud/docs/output.pdf
-Cloud/docs/images/data_flow.png
+cloud/account.json
+cloud/dist/
+docs/report.pdf
+docs/images/data_flow.png
 
 # Local .terraform directories
 **/.terraform/*

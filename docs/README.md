@@ -4,7 +4,7 @@ The data for the Black Box is ultimately stored in a Google Sheet.
 The data flow for that looks a little something like this:
 
 <div style="text-align:center">
-  <img src="docs/images/data_flow.png" />
+  <img src="images/data_flow.png" />
 </div>
 
 As you can see, a Photon with a Sensor publishes data to the Particle Cloud.
@@ -68,7 +68,7 @@ This does required a Google Cloud Project with a Service Account with the follow
 The following image shows an example of setting the roles for the Service Account:
 
 <div style="text-align:center">
-  <img src="docs/images/service_account.png"/>
+  <img src="images/service_account.png"/>
 </div>
 
 Once the service account is created, the credential file or key needs to be downloaded in JSON format.
