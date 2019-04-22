@@ -2,6 +2,10 @@ variable "project" {
   description = "(Required) The name of the Google Cloud Project such as `my-project-1234`"
 }
 
+variable "sheet_id" {
+  description = "(Required) Google Sheet ID to append the data to"
+}
+
 variable "region" {
   default     = "us-central1"
   description = "(Optional) The region to use in Google Cloud"
@@ -85,6 +89,9 @@ resource "google_cloudfunctions_function" "function" {
   event_trigger = {
     event_type = "google.pubsub.topic.publish"
     resource   = "${google_pubsub_topic.topic.name}"
+  }
+  environment_variables = {
+    SHEET_ID = "${var.sheet_id}"
   }
 
   entry_point = "Run"
