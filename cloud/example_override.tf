@@ -4,5 +4,5 @@ variable "project" {
 
 
 variable "sheet_id" {
-  default = "blah"
+  default = "abcdefghijklmnopqrstuvwxyz--1234567890"
 }

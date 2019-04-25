@@ -1,4 +1,210 @@
-# Cloud Integration
+---
+title: "Building Black Box"
+author: [John Shimek]
+---
+
+## Introduction
+
+The Building Black Box is collaborative art installation with [Tesia Kosmalski](http://tesiakosmalski.net/).
+Tesia has an art studio in the [2010 Hennipen](http://first-first.com/places/2010) building which is an old General Mills R&D facility.
+She asked me a couple months ago about helping with a project that uses an Arduino.
+The project needed to involve the history of the building and be something that would be
+entertaining and informational to visitors during [Art-A-Whirl](https://nemaa.org/art-a-whirl/).
+We discussed a couple options can settled the current project, a Building Black Box.
+
+I learned from Tesia that General Mills was involved in creating one of the first flight recorders in the United States.
+It was called the [Ryan Flight Recorder](https://en.wikipedia.org/wiki/Flight_recorder#US_designs).
+This was a project that General Mills worked in in collaboration with Professor James J. "Crash" Ryan at the University of Minnesota.
+The General Mills lab that worked on this project was located in the same building that Tesia's studio is in.
+The flight recorder eventually evolved into what is presently known as the Black Box in an aircraft.
+
+With this information, Tesia wanted at create something that will demonstrate a Black Box.
+We decided to have three sensors placed throughout the building with a computer displaying the current status in her studio.
+While there is a more involved in an actual black box, we felt that recording the environment within the building to a good analog to a real black box.
+The sensor we found, the [BME680](https://www.adafruit.com/product/3660), reads temperature, humidity, barometric pressure, and air quality.
+Since we don't expect there to be catastrophic events in building during Art-A-Whirl,
+the graphs on the dashboards will not be very interesting.
+To help this, a 4th device will be setup by the display in the studio with a button.
+When the button is pressed, a catastrophe will be simulated in one or more of the devices with sensors.
+
+## Sensors
+
+A core concept to the project is collecting data about the environment.
+This is done using a [Particle Photon](https://docs.particle.io/datasheets/wi-fi/photon-datasheet/) connected to the BME680 sensor mentioned above.
+According the [data sheet for the BME680](https://cdn-shop.adafruit.com/product-files/3660/BME680.pdf),
+the BME680 can connected to the Photon using either the I2C bus or SPI.
+I chose to use I2C because example code with the library available through Particle uses I2C.
+The following table describes how to wire the sensor to the Photon:
+
+| BME680 | Particle Photon |
+| --- | ---
+| VIN | 3v3
+| GND | GND
+| SCK | D1
+| SDI | D0
+
+The following diagram illustrates how the wire up the sensor and the Photon:
+
+<div style="text-align:center">
+  <img src="images/fritz-breadboard.png"/>
+</div>
+
+The next photo shows the actual sensor and the Photon wired together on a breadboard:
+<div style="text-align:center">
+  <img src="images/real-breadboard.png"/>
+</div>
+
+One unfortunate thing with the BME680 sensor is that it without the header pins connected so it had no way to connect to the breadboard out the box.
+This posed some difficulty in using the sensor since I had no experience with soldering.
+Since I want to continue playing with electronics like this, I decided to learn to solder.
+I bought a [Hakko FX-888D](http://www.hakko.com/english/products/hakko_fx888d_set.html) soldering iron and some solder.
+I also bought a pack of perfboards and spare header pins to practice on,
+similar to [this](https://www.adafruit.com/product/2670) and [this](https://www.adafruit.com/product/2822) to practice on.
+I found this video by Adafruit on [how to solder](https://www.youtube.com/watch?v=QKbJxytERvg) which was very helpful.
+After soldering a couple dozen pins, I felt comfortable soldering header pins onto the sensor which was successful.
+
+At this point, I was ready to actually write the code to read data off the sensor and publish it to the Particle Cloud.
+Luckily, there is a [library for the BME680](https://github.com/adafruit/Adafruit_BME680) sensor for use with an Arduino.
+Particle provides a maintained version of this which can be added via the Install Library action in the Particle Web IDE or the Particle Workbench in VS Code.
+The sensor needs to be initialized like this:
+
+```cpp
+#include "Adafruit_BME680.h"
+
+#define SEALEVELPRESSURE_HPA (1013.25)
+
+Adafruit_BME680 bme; // I2C
+
+double temperatureInC = 0;
+double relativeHumidity = 0;
+double pressureHpa = 0;
+double gasResistanceKOhms = 0;
+
+
+void setup() {
+  if (!bme.begin()) {
+    Particle.publish("Log", "Could not find a valid BME680 sensor, check wiring!", PRIVATE);
+  } else {
+    Particle.publish("Log", "bme.begin() success =)", PRIVATE);
+    // Set up oversampling and filter initialization
+    bme.setTemperatureOversampling(BME680_OS_8X);
+    bme.setHumidityOversampling(BME680_OS_2X);
+    bme.setPressureOversampling(BME680_OS_4X);
+    bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
+    bme.setGasHeater(320, 150); // 320*C for 150 ms
+  }
+```
+
+This was taken from the example provided with the library.
+I am not sure what all the options used to initialize the `bme` object mean, but they work.
+After this, the main loop in the code needs to read the values off the sensor.
+
+```cpp
+void loop() {
+  if (! bme.performReading()) {
+    Particle.publish("Log", "Failed to perform reading :(", PRIVATE);
+  } else {
+    temperatureInC = bme.temperature;
+    relativeHumidity = bme.humidity;
+    pressureHpa = bme.pressure / 100.0;
+    gasResistanceKOhms = bme.gas_resistance / 1000.0;
+
+    String data = String::format(
+      "{"
+        "\"temperature\":%.2f,"
+        "\"humidity\":%.2f,"
+        "\"pressure\":%.2f,"
+        "\"airQuality\":%.2f"
+      "}",
+      temperatureInC,
+      relativeHumidity,
+      pressureHpa,
+      gasResistanceKOhms
+    );
+
+    Particle.publish("sensor-data", data, PRIVATE);
+  }
+  delay(10 * 1000);
+}
+```
+
+The values are then published as an event named `sensor-data` to the Particle cloud as JSON.
+
+### Air Quality Index
+
+Before I go any further, I need to talk about the Air Quality Index provided by the BME680.
+There is a lot of factors that go into the air quality based on VOC such as ethane, isoprene, ethanol, acetone, carbon monoxide, and more.
+The data sheet for the sensor describes a lot of complex chemical aspects to what it can sense and how it exposes that data.
+That is beyond my understanding of chemistry.
+Luckily, the sensor also also provides a simple linear scale of the Air Quality Index.
+
+| Air Quality Index | Air Quality |
+| --- | --- |
+| 0 – 50 | Good |
+| 51 - 100 | Average |
+| 101 – 150 | Little bad |
+| 151 – 200 | Bad |
+| 201 – 300 | Worse |
+| 301 – 500 | Very bad |
+
+These ratings are based on the guidelines issued by the German Federal Environmental Agency,
+exceeding 25 mg/m3 of total VOC leads to headaches and further neurotoxic impact on health.
+
+## Photon Functions
+
+As mentioned before, the device with the sensor needs to simulate a catastrophe.
+This is accomplished using a [Particle Function](https://docs.particle.io/reference/device-os/firmware/photon/#particle-function-).
+A Particle Function allows me to define a function on the device that can be invoked via POSTing to Particles API.
+The following code demonstrates this:
+
+```cpp
+const uint32_t CATASTROPHE_LENGTH = 120;
+uint32_t catastropheTimer = 0;
+int introduceCatastrophe(String cmd);
+double getMultiplier();
+double calculateCatastrophe(double multiplier, double value);
+void deviceNameHandler(const char *topic, const char *data);
+
+void setup() {
+  // Register the catastrophe function
+  Particle.function("catastrophe", introduceCatastrophe);
+  // Setup the BME sensor as before
+  // ...
+}
+
+int introduceCatastrophe(String cmd) {
+  // Don't reset the timer if already active
+  if (catastropheTimer > 0) {
+    return 0;
+  }
+
+  catastropheTimer = Time.now() + CATASTROPHE_LENGTH;
+  return 1;
+}
+```
+
+The first part, `Particle.function("catastrophe", introduceCatastrophe)`, registers the function `introduceCatastrophe` with the Particle Cloud.
+At this point, that function can be invoked on the Photon by POSTing to Particle's API.
+The following Curl command will do so with the device id and access token:
+
+```shell
+curl "https://api.particle.io/v1/devices/${DEVICE_ID}/catastrophe" -d access_token="${ACCESS_TOKEN}"
+```
+
+The device ID can be found on the [Particle My Devices](https://console.particle.io/devices) page.
+The access token can be found in the [Particle Web IDE settings](https://build.particle.io/build/new) page.
+For more information on authenticating calls to the Particle Cloud API, please read the [authentication](https://docs.particle.io/reference/device-cloud/api/#authentication) documentation.
+
+When that function is invoked, a timer is set; really, it sets when the catastrophe ends.
+In the loop that reads and publishes the sensor data, the data is modified until the current time is after the catastrophe timer.
+The exact modification is very simple at the moment just to demonstrate that it works.
+I will work with Tesia before Art-A-Whirl on implementing something that is interesting and hopefully realistic.
+For example, we may want to simulate the first couple minutes of a fire.
+Right now, we don't know what the data for that should look like.
+
+## Catastrophe Button
+
+## Cloud Integration
 
 The data for the Black Box is ultimately stored in a Google Sheet.
 The data flow for that looks a little something like this:
@@ -7,11 +213,13 @@ The data flow for that looks a little something like this:
   <img src="images/data_flow.png" />
 </div>
 
-As you can see, a Photon with a Sensor publishes data to the Particle Cloud.
+As you can see, a Photon with a sensor publishes data to the Particle Cloud.
 The Particle Cloud sends that data to a Google Pub/Sub topic, which in turn
 passes along the data to a Google Cloud Function.
 The Cloud Function then appends the data to a Google Sheet.
-Finally, a dashboard is configiured that displays the Google Sheet in real time.
+Finally, a dashboard is configured that displays the Google Sheet in real time.
+Technically, at the moment, a dashboard has not been configured because existing solutions do not meet our needs.
+They either offer too limited control over what is graphed or they do not update fast enough.
 
 It is a lot of moving parts to view the data from the Photon.
 To simplify this, [Terraform](https://www.terraform.io/) is used to create all the Google Cloud infrastructure.
@@ -74,14 +282,26 @@ The following image shows an example of setting the roles for the Service Accoun
 Once the service account is created, the credential file or key needs to be downloaded in JSON format.
 The should be placed in the same `Cloud` directory next to the `cloud.tf` file with the name `account.json`.
 Then copy or rename the `example_override.tf` to `override.tf`.
-Edit this file replace `my-project-1234` with the Google Cloud project id.
-The `override.tf` should look like this with `cool-project-23433` being the project id:
+Edit this file replace `my-project-1234` with the Google Cloud project ID
+and replace `abcdefghijklmnopqrstuvwxyz--1234567890` with the Google Sheet ID.
+The `override.tf` should look like this with `cool-project-23433` being the Google project ID:
 
 ```terraform
 variable "project" {
   default = "cool-project-23422"
 }
+
+variable "sheet_id" {
+  default = "abcdefghijklmnopqrstuvwxyz--1234567890"
+}
 ```
+
+The Google Sheet ID can be found in the URL to the Sheet like this.
+Mine starts with `1c` and ends with `Uo`:
+
+<div style="text-align:center">
+  <img src="images/sheet_id.png" />
+</div>
 
 The directory should look something like this:
 
@@ -110,3 +330,161 @@ The [first command initializes Terraform](https://www.terraform.io/docs/commands
 The [second command creates an execution plan](https://www.terraform.io/docs/commands/plan.html) in order to setup the Google Cloud infrastructure.
 The [third command applies the changes](https://www.terraform.io/docs/commands/apply.html) needed to setup the Google Cloud infrastructure.
 After this completes, the Google Cloud project should have the Topic and Function required for the BlackBox project.
+
+### Google Sheet
+
+The Function will fail to append data to the Google Sheet still at this point.
+The default Service Account for the Google Project needs to added to the Sheet with *Edit* permissions, like this:
+
+<div style="text-align:center">
+  <img src="images/sheet_edit.png" />
+</div>
+
+That image also shows that layout of the Google Sheet with the following columns:
+
+* Time of the event
+* Device name
+* Temperature
+* Humidity
+* Barometric Pressure
+* Air Quality
+
+### Google Cloud Function
+
+The piece is the Google Cloud Function that subscribes to the Pub/Sub Topic and appends the data to the Google Sheet.
+The Cloud Function is written in [Go](https://golang.org/) which is a [supported language](https://cloud.google.com/functions/docs/concepts/go-runtime) for Cloud Functions.
+The entry point to the Function is the `Run` method:
+
+```go
+func Run(ctx context.Context, m PubSubMessage) error {
+  logger := NewCloudFunctionLogger()
+  timestamp, err := getTimestamp(m.Attributes)
+  if err != nil {
+    logger.error(err.Error())
+    return err
+  }
+
+  // Get the sheet id from the environment
+  sheetID := os.Getenv("SHEET_ID")
+  if len(sheetID) == 0 {
+    err := errors.New("SHEET_ID environment variable not set")
+    logger.error(err.Error())
+    return err
+  }
+
+  // Read the event off the data
+  event, err := DecodeSensorEvent(m.Data)
+  if err != nil {
+    logger.error("Failed to get sensor data: %s", err.Error())
+    return err
+  }
+
+  // Append the event to sheet
+  if err = AppendEvent(ctx, sheetID, timestamp, event); err != nil {
+    logger.error("Failed to append data to the sheet: error=%s", err.Error())
+    return err
+  }
+  logger.log("Appended data to the sheet")
+
+  return nil
+}
+```
+
+This should be pretty self-explanatory, but it is worth calling out the main sections.
+First, the published time for the event is read off the `Attributes` of the Pub/Sub messages that triggered the Function.
+The timestamp is more complicated than expected.
+Particle includes the published time on the event in ISO 8601 format.
+It looks something like this: `2019-04-23T15:32.238Z`.
+Google Sheets does not natively recognize this as a date and time.
+To handle this, the date and time is converted in the Function to a format that Google Sheets recognizes.
+This is accomplished by parsing the given date and time into a `Time` object and then formatting in a different way like this:
+
+```go
+func getTimestamp(attributes map[string]string) (string, error) {
+  timestamp, err := time.Parse("2006-01-02T15:04:05.999Z", attributes["published_at"])
+  if err != nil {
+    return "", fmt.Errorf("Failed to parse the timestamp: published_at=%s, error=%s", attributes["published_at"], err.Error())
+  }
+  return timestamp.Format("01/02/2006 3:03 PM"), nil
+}
+```
+
+By the way, Go has an odd way to specific [date and time formats](https://golang.org/pkg/time/#Parse).
+Go reads a date and time format using an example format with a specific date and time, *Mon Jan 2 15:04:05 -0700 MST 2006*.
+
+Next, the Sheet ID that was defined in Terraform is available to the Function as an environment variable.
+Then the sensor data is decoded into a usable format within the Function.
+Here is how it is decoded:
+
+```go
+// SensorEvent is the payload within the Pub/Sub event data.
+type SensorEvent struct {
+  Temperature float64 `json:"temperature"`
+  Humidity    float64 `json:"humidity"`
+  Pressure    float64 `json:"pressure"`
+  AirQuality  float64 `json:"airQuality"`
+  Device      string  `json:"device"`
+}
+
+// DecodeSensorEvent decodes the raw sensor event and converts to a SensorEvent struct
+func DecodeSensorEvent(data []byte) (*SensorEvent, error) {
+  var event SensorEvent
+  if err := json.Unmarshal(data, &event); err != nil {
+    return nil, fmt.Errorf("Failed to unmarshal sensor data: data=%s, error=%s", string(data), err.Error())
+  }
+  return &event, nil
+}
+```
+
+An astute observer will notice that the device name is provided in the message.
+It turns out that when Particle sends the event to Google Pub/Sub, the device name is not included.
+Instead, the device ID  is included, which is not as readable as the name.
+To address this, the code for the Photon was updated to include the device name in the published data.
+The device name was obtained using code provided in the [Particle device name](https://docs.particle.io/reference/device-os/firmware/photon/#get-device-name) documentation.
+
+Finally, the data is appended to the Google Sheet using the [Google Sheets API v4 library for Go](https://godoc.org/google.golang.org/api/sheets/v4).
+This is done in the `AppendEvent` method in the Cloud Function.
+The call `sheets.NewService(ctx)` determines that this is running in a Google Cloud runtime and
+automatically authenticates to Google Sheets using the default Service Account for the project.
+Hence, why we gave access to that Service Account in the Google Sheet.
+If this was not running in Google Cloud, authenticating with Google Sheets would be more complicated.
+
+```go
+// AppendEvent appends a SensorEvent to a Google Sheet.
+func AppendEvent(ctx context.Context, sheetID string, timestamp string, event *SensorEvent) error {
+  sheetService, err := sheets.NewService(ctx)
+  if err != nil {
+    return fmt.Errorf("Failed to get Sheets client: error=%s", err.Error())
+  }
+
+  values := []interface{}{timestamp, event.Device, event.Temperature, event.Humidity, event.Pressure, event.AirQuality}
+  var valueRange sheets.ValueRange
+  valueRange.Values = append(valueRange.Values, values)
+  _, err = sheetService.Spreadsheets.Values.Append(sheetID, "A1", &valueRange).ValueInputOption("USER_ENTERED").Do()
+  if err != nil {
+    return fmt.Errorf("Failed to append data to sheet: data=%+v, error=%s", event, err.Error())
+  }
+  return nil
+}
+```
+
+## Dashboards
+
+At this time, there is no dashboard to display all this data in real-time.
+I tried a couple different solutions, such as [Dasharoo](https://www.dasheroo.com/) and [Google Data Studio](https://datastudio.google.com/).
+The problems I encountered were either limited capabilities in the graphs and not having the graphs updated in a timely manner.
+I have a feeling that I will need to write my own dashboard for Art-A-Whirl.
+
+## Conclusion
+
+A complete IoT solution as a lot of pieces to it.
+In this case, a lot of research was one on understanding how the BME680 sensor connects to the Photon, both physically and via the code.
+And then there was a brief detour into learning how to solder so the sensor could actually be attached to a breadboard.
+Once the Photon was publishing data to the Photon Cloud, it was just a matter of connecting that to a Google Sheet.
+Having a software background and experience with Google Cloud, this was a lot easier.
+Setting up Terraform to manage the Google Cloud Infrastructure was a huge boon.
+Every time I needed needed to change something with the Pub/Sub Topic or update the Google Cloud Function,
+I just had to re-run `terraform apply`.
+Getting the solution to manage Google Cloud Functions via Terraform did involve reading several StackOverflow questions and issues in Github.
+But in the end, the solution with storing the code in a file a bucket with the hash of the zip file in the filename worked great.
+Once everything was working, it was pretty easy to iterate on both the Photon and the Cloud integration.

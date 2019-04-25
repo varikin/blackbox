@@ -28,12 +28,22 @@ double gasResistanceKOhms = 0;
 
 const uint32_t CATASTROPHE_LENGTH = 120;
 uint32_t catastropheTimer = 0;
+
+char deviceName[32] = "unknown";
+
 int introduceCatastrophe(String cmd);
 double getMultiplier();
 double calculateCatastrophe(double multiplier, double value);
+void deviceNameHandler(const char *topic, const char *data);
 
 void setup() {
+  // Register the catastrophe function
   Particle.function("catastrophe", introduceCatastrophe);
+
+  // Get the device name to include in the event data
+  Particle.subscribe("particle/device/name", deviceNameHandler);
+  Particle.publish("particle/device/name");
+
   if (!bme.begin()) {
     Particle.publish("Log", "Could not find a valid BME680 sensor, check wiring!", PRIVATE);
   } else {
@@ -44,11 +54,6 @@ void setup() {
     bme.setPressureOversampling(BME680_OS_4X);
     bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
     bme.setGasHeater(320, 150); // 320*C for 150 ms
-
-    Particle.variable("temperature", &temperatureInC, DOUBLE);
-    Particle.variable("humidity", &relativeHumidity, DOUBLE);
-    Particle.variable("pressure", &pressureHpa, DOUBLE);
-    Particle.variable("gas", &gasResistanceKOhms, DOUBLE);
   }
 }
 
@@ -74,18 +79,24 @@ void loop() {
         "\"temperature\":%.2f,"
         "\"humidity\":%.2f,"
         "\"pressure\":%.2f,"
-        "\"airQuality\":%.2f"
+        "\"airQuality\":%.2f,"
+        "\"device\":\"%s\""
       "}",
       temperatureInC,
       relativeHumidity,
       pressureHpa,
-      gasResistanceKOhms
+      gasResistanceKOhms,
+      deviceName
     );
 
     Particle.publish("sensor-data", data, PRIVATE);
     Particle.publish("catastrophe-timer", String(catastropheTimer), PRIVATE);
   }
   delay(10 * 1000);
+}
+
+void deviceNameHandler(const char *topic, const char *data) {
+  strncpy(deviceName, data, sizeof(deviceName) - 1);
 }
 
 double getMultiplier() {
