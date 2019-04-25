@@ -6,7 +6,7 @@ author: [John Shimek]
 ## Introduction
 
 The Building Black Box is collaborative art installation with [Tesia Kosmalski](http://tesiakosmalski.net/).
-Tesia has an art studio in the [2010 Hennipen](http://first-first.com/places/2010) building which is an old General Mills R&D facility.
+Tesia has an art studio in the [2010 Hennepin](http://first-first.com/places/2010) building which is an old General Mills R&D facility.
 She asked me a couple months ago about helping with a project that uses an Arduino.
 The project needed to involve the history of the building and be something that would be
 entertaining and informational to visitors during [Art-A-Whirl](https://nemaa.org/art-a-whirl/).
