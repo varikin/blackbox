@@ -27,6 +27,8 @@ the graphs on the dashboards will not be very interesting.
 To help this, a 4th device will be setup by the display in the studio with a button.
 When the button is pressed, a catastrophe will be simulated in one or more of the devices with sensors.
 
+This complete project can be found on [Github](https://github.com/varikin/blackbox)
+
 ## Sensors
 
 A core concept to the project is collecting data about the environment.
@@ -640,6 +642,8 @@ I have a feeling that I will need to write my own dashboard for Art-A-Whirl.
 ## Conclusion
 
 A complete IoT solution as a lot of pieces to it.
+Each piece takes time and trial and error, but in the end, is not difficult.
+The is the combination of all of the pieces that make this this hard.
 In this case, a lot of research was one on understanding how the BME680 sensor connects to the Photon, both physically and via the code.
 And then there was a brief detour into learning how to solder so the sensor could actually be attached to a breadboard.
 Once the Photon was publishing data to the Photon Cloud, it was just a matter of connecting that to a Google Sheet.
@@ -650,3 +654,12 @@ I just had to re-run `terraform apply`.
 Getting the solution to manage Google Cloud Functions via Terraform did involve reading several StackOverflow questions and issues in Github.
 But in the end, the solution with storing the code in a file a bucket with the hash of the zip file in the filename worked great.
 Once everything was working, it was pretty easy to iterate on both the Photon and the Cloud integration.
+
+I am disappointed that I was not able to get a dashboard working yet, but there is still time for that at Art-A-Whirl, along with polishing this up.
+Each Photon with a sensor should powered by a battery that can last three days.
+I have not yet measured how many amps it draws to figure what is needed for the battery capacity.
+Also, the Photons will need reliable wifi throughout the 2010 Hennepin building.
+Hopefully the City of Minneapolis wifi can be used, but if not, I may need to work with other artists in the building near where each Photon is placed.
+The specifics of what *simulating a catastrophe* means will definitely need to change to be more realistic, but all the plumbing is in place to trigger it.
+Finally, the Photons need to be in a nice case.
+I will be working with Tesia to 3D print cases that fit our needs.
