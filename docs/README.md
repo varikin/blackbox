@@ -31,7 +31,7 @@ When the button is pressed, a catastrophe will be simulated in one or more of th
 
 A core concept to the project is collecting data about the environment.
 This is done using a [Particle Photon](https://docs.particle.io/datasheets/wi-fi/photon-datasheet/) connected to the BME680 sensor mentioned above.
-According the [data sheet for the BME680](https://cdn-shop.adafruit.com/product-files/3660/BME680.pdf),
+According the [datasheet for the BME680](https://cdn-shop.adafruit.com/product-files/3660/BME680.pdf),
 the BME680 can connected to the Photon using either the I2C bus or SPI.
 I chose to use I2C because example code with the library available through Particle uses I2C.
 The following table describes how to wire the sensor to the Photon:
@@ -134,7 +134,7 @@ The values are then published as an event named `sensor-data` to the Particle cl
 
 Before I go any further, I need to talk about the Air Quality Index provided by the BME680.
 There is a lot of factors that go into the air quality based on VOC such as ethane, isoprene, ethanol, acetone, carbon monoxide, and more.
-The data sheet for the sensor describes a lot of complex chemical aspects to what it can sense and how it exposes that data.
+The datasheet for the sensor describes a lot of complex chemical aspects to what it can sense and how it exposes that data.
 That is beyond my understanding of chemistry.
 Luckily, the sensor also also provides a simple linear scale of the Air Quality Index.
 
@@ -204,6 +204,97 @@ Right now, we don't know what the data for that should look like.
 
 ## Catastrophe Button
 
+### Button Hardware
+
+Simulating a catastrophe is done with a separate Photon connected a button.
+The chosen button is [24mm LED arcade button](https://www.adafruit.com/product/3430).
+There is not a datasheet for the button that I could find, but it is pretty simple.
+Has has four pins, two for the momentary switch and two to power the LED.
+According to the description on Adafruit's website, the button is lit with two LEDs in parallel, each with a 1K resistor.
+The LED requires 5V with a draw of 10mA.
+The Photon only provides 3.3V, but according the datasheet, if powered via USB, the V<sub>in</sub> pin will output about 4.8V.
+I was able to use this to power the LEDs in the button, but that means I am not able to easily control the lights.
+They are either on or off, depending on whether the Photon has power or not.
+The diagram below is a poor representation of how wire the button and the Photon together.
+There wasn't a part in Fritzing for the LED arcade button, so I show a simple arcade button and a single LED.
+The LED is meant to represent the pins on the arcade button for the LEDs in the button.
+
+<div style="text-align:center">
+  <img src="images/fritz_button.png" />
+</div>
+
+Since the pins are not marked, I used a multimeter to determine which two are connected to the switch.
+The other two then had to be for LEDs.
+The photos below show the button connected to the Photon.
+
+
+<div style="text-align:center">
+  <img src="images/button_wires.jpg" />
+</div>
+
+This image shows the pins.
+The top two pins, which are offset, read the state of the switch.
+The bottom two pins power the LEDs.
+In the table below, the button pins are labeled according the colors of the wires that I used.
+These colors don't mean anything other than they were available to use at the time.
+
+| Button Pin | Photon Pin | Purpose |
+| --- | --- | --- |
+| Black | 3v3 | Switch |
+| White | D5 | Switch |
+| Green | V<sub>in</sub> | LED |
+| Yellow | Gnd | LED |
+
+Note that either ground pin on the Photon works with the LEDs.
+I just chose the one next the V<sub>in</sub> to keep paired wires near each other.
+
+
+<div style="text-align:center">
+  <img src="images/button_photon.jpg" />
+</div>
+<div style="text-align:center">
+  <img src="images/button_lit.jpg" />
+</div>
+
+The above two images show the wires from the button connected to the breadboard
+and the button lit up when the Photon is powered.
+
+### Software for the Button
+
+When the button is pressed, it should inform another Photon with sensors to simulate a catastrophe.
+It was described above how to trigger this on other Photons by POSTing to the Particle Cloud API.
+Unfortunately, the capabilities on the Photon to make HTTP calls over TLS are are very limited.
+TLS is needed to make an HTTP request to a secure domain using `https`.
+There appears to be several unofficial libraries to support TLS, but they are lacking in understandable documentation and examples.
+My solution was to publish to Particle Cloud when the button is pressed.
+That event stream is published to a Google Pub/Sub Topic via a webhook.
+A Google Cloud Function then subscribes to this Pub/Sub Topic and make the HTTP request to the Particle Cloud API.
+Below is the code to detect when the button is pressed and to publish that state.
+
+```cpp
+int momPin = D5;
+int previousMomState = 0;
+
+// Setup the device with the momentary switch pin in the right mode.
+void setup() {
+  pinMode(momPin, INPUT_PULLDOWN);
+}
+
+// Main loop, check the switch state
+void loop() {
+
+  int momState = digitalRead(momPin);
+
+  // Only act if the state changed from the last run.
+  if (previousMomState != momState) {
+    previousMomState = momState;
+    if (momState == 1) {
+      Particle.publish("simulate-catastrophe", String(momState), 60, PRIVATE);
+    }
+  }
+}
+```
+
 ## Cloud Integration
 
 The data for the Black Box is ultimately stored in a Google Sheet.
@@ -213,28 +304,36 @@ The data flow for that looks a little something like this:
   <img src="images/data_flow.png" />
 </div>
 
-As you can see, a Photon with a sensor publishes data to the Particle Cloud.
-The Particle Cloud sends that data to a Google Pub/Sub topic, which in turn
+A Photon with a sensor publishes data to the Particle Cloud.
+At the moment, there is just a single Photon with a sensor, but for Art-A-Whirl, there will be three.
+But that does not change the data flow or operation of an individual Photon.
+The Particle Cloud sends the sensor data to a Google Pub/Sub Topic, which in turn
 passes along the data to a Google Cloud Function.
 The Cloud Function then appends the data to a Google Sheet.
 Finally, a dashboard is configured that displays the Google Sheet in real time.
 Technically, at the moment, a dashboard has not been configured because existing solutions do not meet our needs.
 They either offer too limited control over what is graphed or they do not update fast enough.
 
-It is a lot of moving parts to view the data from the Photon.
-To simplify this, [Terraform](https://www.terraform.io/) is used to create all the Google Cloud infrastructure.
-The file `cloud.tf` defines what the Pub/Sub Topic and Cloud Function, along with other pieces to make that happen,
+The other Photon with the button publishes to the Particle Cloud when the button is activated.
+That event is sent to a different Google Pub/Sub Topic.
+Another Cloud Function subscribes this second Topic.
+When this Function runs, it randomly selects one of the Photons with a sensor
+and makes an HTTP request to the Particle Function API for that device.
+
+With so many parts to the Google Cloud integration,
+I opted to use [Terraform](https://www.terraform.io/) is used to create and update all the Google Cloud infrastructure.
+The file `cloud.tf` defines both Pub/Sub Topics and Cloud Functions, along with other pieces to make that happen,
 such as a bucket to store the Function code in.
-The following snippet defines the Topic and adds the Particle Service Account as a publisher:
+The following snippet defines the Topic for the sensor data and adds the Particle Service Account as a publisher:
 
 ```terraform
-resource "google_pubsub_topic" "topic" {
-  name = "${var.topic_name}"
+resource "google_pubsub_topic" "sensor_data_topic" {
+  name = "${var.sensor_data_topic}"
 }
 
 # Add the Particle service account as a Pub/Sub publisher to the topic
-resource "google_pubsub_topic_iam_binding" "publisher" {
-  topic = "${google_pubsub_topic.topic.name}"
+resource "google_pubsub_topic_iam_binding" "sensor_data_publisher" {
+  topic = "${google_pubsub_topic.sensor_data_topic.name}"
   role  = "roles/pubsub.publisher"
 
   members = [
@@ -243,26 +342,33 @@ resource "google_pubsub_topic_iam_binding" "publisher" {
 }
 ```
 
-The next snippet defines the Cloud Function.
-The code for the function is stored in a bucket, also managed via Terraform:
+The Topic for the button activation is the same, except with a different name.
+
+The next snippet defines the Cloud Function for sensor data.
+The code for the Function is stored in a bucket, also managed via Terraform:
 
 ```terraform
-resource "google_cloudfunctions_function" "function" {
-  name                  = "${var.function_name}"
+resource "google_cloudfunctions_function" "sensor_data_function" {
+  name                  = "${var.sensor_data_function}"
   available_memory_mb   = 128
   timeout               = 60
   runtime               = "go111"
-  source_archive_bucket = "${google_storage_bucket_object.function_object.bucket}"
-  source_archive_object = "${google_storage_bucket_object.function_object.name}"
+  source_archive_bucket = "${google_storage_bucket_object.sensor_data_function_object.bucket}"
+  source_archive_object = "${google_storage_bucket_object.sensor_data_function_object.name}"
 
   event_trigger = {
     event_type = "google.pubsub.topic.publish"
-    resource   = "${google_pubsub_topic.topic.name}"
+    resource   = "${google_pubsub_topic.sensor_data_topic.name}"
+  }
+  environment_variables = {
+    SHEET_ID = "${var.sheet_id}"
   }
 
   entry_point = "Run"
 }
 ```
+
+The Function for simulating a catastrophe is the same except for the name and references.
 
 To apply the Terraform configuration, [install Terraform locally](https://www.terraform.io/downloads.html).
 Be sure to use version 0.11 and **not** 0.12 as the configuration syntax has changed.
@@ -282,9 +388,14 @@ The following image shows an example of setting the roles for the Service Accoun
 Once the service account is created, the credential file or key needs to be downloaded in JSON format.
 The should be placed in the same `Cloud` directory next to the `cloud.tf` file with the name `account.json`.
 Then copy or rename the `example_override.tf` to `override.tf`.
-Edit this file replace `my-project-1234` with the Google Cloud project ID
-and replace `abcdefghijklmnopqrstuvwxyz--1234567890` with the Google Sheet ID.
-The `override.tf` should look like this with `cool-project-23433` being the Google project ID:
+Edit this file and set the following defaults to your values:
+
+* project
+* sheet_id
+* device_ids
+* particle_access_token
+
+The `override.tf` should look something like this, but with your values:
 
 ```terraform
 variable "project" {
@@ -294,6 +405,15 @@ variable "project" {
 variable "sheet_id" {
   default = "abcdefghijklmnopqrstuvwxyz--1234567890"
 }
+
+
+variable "device_ids" {
+    default = "23432543232432432432"
+}
+
+variable "particle_access_token" {
+  default = "234324jkfdpsa45u32jklfnmdsiaeo3"
+}
 ```
 
 The Google Sheet ID can be found in the URL to the Sheet like this.
@@ -302,6 +422,18 @@ Mine starts with `1c` and ends with `Uo`:
 <div style="text-align:center">
   <img src="images/sheet_id.png" />
 </div>
+
+The device IDs will the Particle Device IDs for all the Photons with sensors.
+These can be found on the [Particle Console](https://console.particle.io/devices).
+If more than one Photon is being used, they should be listed in a comma delimited string like this:
+
+```terraform
+variable "device_ids" {
+    default = "23432543232432432432,6424626324532464,345432453245432543"
+}
+```
+
+The Particle Access Token can be found in the [Particle Web IDE settings](https://build.particle.io/build/new) page.
 
 The directory should look something like this:
 
@@ -331,6 +463,21 @@ The [second command creates an execution plan](https://www.terraform.io/docs/com
 The [third command applies the changes](https://www.terraform.io/docs/commands/apply.html) needed to setup the Google Cloud infrastructure.
 After this completes, the Google Cloud project should have the Topic and Function required for the BlackBox project.
 
+Once all this is complete, two webhooks will need to be created in the Particle Console so that the data is published to Google Pub/Sub.
+This done on the [Particle Console Integrations](https://console.particle.io/integrations) page.
+Click *New Integration* and choose *Google Cloud Platform*.
+The next page lists instructions to create Google Cloud account, project, and Pub/Sub Topic with the correct permissions.
+If the Terraform ran successfully, this should be done.
+Click through to the next screen and set the event name to be `sensor-data`
+and the Topic to be `projects/<cool-project-1234>/topics/black-box-sensor-data`.
+You will need to replace `<cool-project-1234>` with your project name.
+Alternatively, you can get the complete Topic name from the Google Pub/Sub console.
+Set the device to *Any* so that all the data from Photons with sensors is published.
+After that, create a second Google Cloud integration to publish the button state.
+The event name for that integration should be `simulate-catastrophe`.
+The Topic should be `projects/<cool-project-1234>/topics/black-box-catastrophe`, again replacing the project name with your project name.
+The device can be set to either *Any* or the specific Photon with the button.
+
 ### Google Sheet
 
 The Function will fail to append data to the Google Sheet still at this point.
@@ -349,41 +496,30 @@ That image also shows that layout of the Google Sheet with the following columns
 * Barometric Pressure
 * Air Quality
 
-### Google Cloud Function
+### Google Cloud Functions
 
-The piece is the Google Cloud Function that subscribes to the Pub/Sub Topic and appends the data to the Google Sheet.
 The Cloud Function is written in [Go](https://golang.org/) which is a [supported language](https://cloud.google.com/functions/docs/concepts/go-runtime) for Cloud Functions.
-The entry point to the Function is the `Run` method:
+Error handling has been removed from all the following code snippets to make the more succinct.
+Please reference the actual code to see the error handling.
+
+#### Handling Sensor Data
+
+The following Function reads the data from the Pub/Sub Topic with the sensor data and appends it to the Google Sheet:
 
 ```go
 func Run(ctx context.Context, m PubSubMessage) error {
   logger := NewCloudFunctionLogger()
   timestamp, err := getTimestamp(m.Attributes)
-  if err != nil {
-    logger.error(err.Error())
-    return err
-  }
 
   // Get the sheet id from the environment
   sheetID := os.Getenv("SHEET_ID")
-  if len(sheetID) == 0 {
-    err := errors.New("SHEET_ID environment variable not set")
-    logger.error(err.Error())
-    return err
-  }
 
   // Read the event off the data
   event, err := DecodeSensorEvent(m.Data)
-  if err != nil {
-    logger.error("Failed to get sensor data: %s", err.Error())
-    return err
-  }
 
   // Append the event to sheet
-  if err = AppendEvent(ctx, sheetID, timestamp, event); err != nil {
-    logger.error("Failed to append data to the sheet: error=%s", err.Error())
-    return err
-  }
+  AppendEvent(ctx, sheetID, timestamp, event)
+
   logger.log("Appended data to the sheet")
 
   return nil
@@ -402,9 +538,6 @@ This is accomplished by parsing the given date and time into a `Time` object and
 ```go
 func getTimestamp(attributes map[string]string) (string, error) {
   timestamp, err := time.Parse("2006-01-02T15:04:05.999Z", attributes["published_at"])
-  if err != nil {
-    return "", fmt.Errorf("Failed to parse the timestamp: published_at=%s, error=%s", attributes["published_at"], err.Error())
-  }
   return timestamp.Format("01/02/2006 3:03 PM"), nil
 }
 ```
@@ -429,9 +562,7 @@ type SensorEvent struct {
 // DecodeSensorEvent decodes the raw sensor event and converts to a SensorEvent struct
 func DecodeSensorEvent(data []byte) (*SensorEvent, error) {
   var event SensorEvent
-  if err := json.Unmarshal(data, &event); err != nil {
-    return nil, fmt.Errorf("Failed to unmarshal sensor data: data=%s, error=%s", string(data), err.Error())
-  }
+  json.Unmarshal(data, &event)
   return &event, nil
 }
 ```
@@ -453,17 +584,48 @@ If this was not running in Google Cloud, authenticating with Google Sheets would
 // AppendEvent appends a SensorEvent to a Google Sheet.
 func AppendEvent(ctx context.Context, sheetID string, timestamp string, event *SensorEvent) error {
   sheetService, err := sheets.NewService(ctx)
-  if err != nil {
-    return fmt.Errorf("Failed to get Sheets client: error=%s", err.Error())
-  }
 
   values := []interface{}{timestamp, event.Device, event.Temperature, event.Humidity, event.Pressure, event.AirQuality}
   var valueRange sheets.ValueRange
   valueRange.Values = append(valueRange.Values, values)
   _, err = sheetService.Spreadsheets.Values.Append(sheetID, "A1", &valueRange).ValueInputOption("USER_ENTERED").Do()
-  if err != nil {
-    return fmt.Errorf("Failed to append data to sheet: data=%+v, error=%s", event, err.Error())
-  }
+  return nil
+}
+```
+
+#### Simulating the Catastrophe
+
+The following Function is invoked by new data in the Pub/Sub Topic.
+It doesn't use that data, it just uses the new data as a trigger.
+It reads the device IDs from an environment variable and chooses one randomly.
+Finally, it submits a `POST` request to `https://api.particle.io/v1/devices/<DEVICE_ID>/catastrophe`.
+
+```go
+// Run is the entry point into the Function.
+// The pub/sub message is not needed, it is just a trigger.
+func Run(ctx context.Context, _ interface{}) error {
+  logger := NewCloudFunctionLogger()
+
+  // Get the access token for Particle
+  accessToken := os.Getenv("PARTICLE_ACCESS_TOKEN")
+
+  // Get the list of devices that could be acted upon
+  rawDeviceIDs := os.Getenv("DEVICE_IDS")
+  deviceIDs := strings.Split(rawDeviceIDs, ",")
+
+  // Select one device randomly
+  seed := rand.NewSource(time.Now().UnixNano())
+  random := rand.New(seed)
+  index := random.Intn(len(deviceIDs))
+  deviceID := deviceIDs[index]
+
+  // Post to the Particle Cloud for the device
+  api := fmt.Sprintf("https://api.particle.io/v1/devices/%s/catastrophe", deviceID)
+  http.PostForm(api, url.Values{
+    "access_token": {accessToken},
+  })
+
+  logger.log("Simulated catastrophe on device %s", deviceID)
   return nil
 }
 ```

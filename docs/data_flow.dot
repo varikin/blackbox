@@ -1,7 +1,0 @@
-digraph {
-  "Photon w/ Sensor" -> "Particle Cloud"[label="Publish data"]
-  "Particle Cloud" -> "Google Pub/Sub"[label="Send data to Google\nTopic via webhook"]
-  "Google Pub/Sub" -> "Google Cloud Function"[label="Subscribe to topic"]
-  "Google Cloud Function" -> "Google Sheet"[label="Add data from topic"]
-  "Google Sheet" -> "Dashboard"[label="Display Sheet data\nin realtime"]
-}
