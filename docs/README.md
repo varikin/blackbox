@@ -661,5 +661,8 @@ I have not yet measured how many amps it draws to figure what is needed for the 
 Also, the Photons will need reliable wifi throughout the 2010 Hennepin building.
 Hopefully the City of Minneapolis wifi can be used, but if not, I may need to work with other artists in the building near where each Photon is placed.
 The specifics of what *simulating a catastrophe* means will definitely need to change to be more realistic, but all the plumbing is in place to trigger it.
-Finally, the Photons need to be in a nice case.
+The Photons need to be in a nice case.
 I will be working with Tesia to 3D print cases that fit our needs.
+Finally, a real-time dashboard is still needed.
+As I already stated, I think I will have to write my own.
+But regardless of all the finishing polish, the Building Black Box is a success.
