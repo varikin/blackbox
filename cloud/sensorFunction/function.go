@@ -4,13 +4,10 @@ package blackbox
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"time"
-
-	"google.golang.org/api/sheets/v4"
 )
 
 // PubSubMessage is the payload of a Pub/Sub event. Please refer to the docs for
@@ -21,44 +18,15 @@ type PubSubMessage struct {
 	PublishTime string            `json:"publishTime"`
 }
 
-// SensorEvent is the payload within the Pub/Sub event data.
-type SensorEvent struct {
-	Temperature float64 `json:"temperature"`
-	Humidity    float64 `json:"humidity"`
-	Pressure    float64 `json:"pressure"`
-	AirQuality  float64 `json:"airQuality"`
-	Device      string  `json:"device"`
-}
-
-// DecodeSensorEvent decodes the raw sensor event and converts to a SensorEvent struct
-func DecodeSensorEvent(data []byte) (*SensorEvent, error) {
-	var event SensorEvent
-	if err := json.Unmarshal(data, &event); err != nil {
-		return nil, fmt.Errorf("Failed to unmarshal sensor data: data=%s, error=%s", string(data), err.Error())
-	}
-	return &event, nil
-}
-
-// AppendEvent appends a SensorEvent to a Google Sheet.
-func AppendEvent(ctx context.Context, sheetID string, timestamp string, event *SensorEvent) error {
-	sheetService, err := sheets.NewService(ctx)
-	if err != nil {
-		return fmt.Errorf("Failed to get Sheets client: error=%s", err.Error())
-	}
-
-	values := []interface{}{timestamp, event.Device, event.Temperature, event.Humidity, event.Pressure, event.AirQuality}
-	var valueRange sheets.ValueRange
-	valueRange.Values = append(valueRange.Values, values)
-	_, err = sheetService.Spreadsheets.Values.Append(sheetID, "A1", &valueRange).ValueInputOption("USER_ENTERED").Do()
-	if err != nil {
-		return fmt.Errorf("Failed to append data to sheet: data=%+v, error=%s", event, err.Error())
-	}
-	return nil
-}
-
 // Run consumes a Pub/Sub message.
 func Run(ctx context.Context, m PubSubMessage) error {
 	logger := NewCloudFunctionLogger()
+	err := RegisterMetrics()
+	if err != nil {
+		logger.error(err.Error())
+		return err
+	}
+
 	timestamp, err := getTimestamp(m.Attributes)
 	if err != nil {
 		logger.error(err.Error())
@@ -74,18 +42,24 @@ func Run(ctx context.Context, m PubSubMessage) error {
 	}
 
 	// Read the event off the data
-	event, err := DecodeSensorEvent(m.Data)
+	event, err := DecodeSensorEvent(m.Data, timestamp)
 	if err != nil {
 		logger.error("Failed to get sensor data: %s", err.Error())
 		return err
 	}
 
-	// Append the event to sheet
-	if err = AppendEvent(ctx, sheetID, timestamp, event); err != nil {
+	// Record the even to StackDriver
+	if err = RecordEvent(ctx, event); err != nil {
 		logger.error("Failed to append data to the sheet: error=%s", err.Error())
 		return err
 	}
-	logger.log("Appended data to the sheet")
+
+	// Append the event to sheet
+	if err = AppendEventToSpreadsheet(ctx, sheetID, event); err != nil {
+		logger.error("Failed to append data to the sheet: error=%s", err.Error())
+		return err
+	}
+	logger.log("Reported event: %v+", event)
 
 	return nil
 }

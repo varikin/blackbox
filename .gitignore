@@ -1,4 +1,5 @@
 .vscode/
+.idea/
 cloud/account.json
 cloud/dist/
 docs/report.pdf
