@@ -1,20 +1,3 @@
-/***************************************************************************
-  This is a library for the BME680 gas, humidity, temperature & pressure sensor
-
-  Designed specifically to work with the Adafruit BME680 Breakout
-  ----> http://www.adafruit.com/products/3660
-
-  These sensors use I2C or SPI to communicate, 2 or 4 pins are required
-  to interface.
-
-  Adafruit invests time and resources providing this open source code,
-  please support Adafruit and open-source hardware by purchasing products
-  from Adafruit!
-
-  Written by Limor Fried & Kevin Townsend for Adafruit Industries.
-  BSD license, all text above must be included in any redistribution
- ***************************************************************************/
-
 #include "Adafruit_BME680.h"
 
 #define SEALEVELPRESSURE_HPA (1013.25)
@@ -23,16 +6,23 @@
 Adafruit_BME680 bme; // I2C
 
 const int ledPin = D6;
-const uint32_t CATASTROPHE_LENGTH = 120;
+const uint32_t CATASTROPHE_LENGTH_SECONDS = 5 * 60;
+const uint32_t CATASTROPHE_HOLD_LENGTH_SECONDS = 5 * 60;
 uint32_t catastropheTimer = 0;
+uint32_t catastropheHoldTimer = 0;
 const uint32_t SENSOR_DELAY = 10;
 uint32_t sensorTimer = 0;
 char deviceName[32] = "unknown";
 
+const double TEMPERATURE_MAX = 600;
+const double HUMIDITY_MIN = 20;
+const double PRESSURE_MIN = 949;
+const double AIR_QUALITY_MAX = 500;
+
 // Define methods
 int introduceCatastrophe(String cmd);
-double getMultiplier();
-double calculateCatastrophe(double multiplier, double value);
+double getCatastrophePercent();
+double calculateValue(double initial, double target, double percent);
 void deviceNameHandler(const char *topic, const char *data);
 void readSensor();
 void blink(unsigned long delayMs);
@@ -90,6 +80,11 @@ void readSensor() {
     return;
   }
 
+  // Wait till we have a name
+  if (deviceName == "unknown") {
+    return;
+  }
+
   // Turn on LED
   digitalWrite(ledPin, HIGH);
 
@@ -100,12 +95,12 @@ void readSensor() {
   double gasResistanceKOhms = bme.gas_resistance / 1000.0;
 
   // Modify data based on catastrophe
-  double multiplier = getMultiplier();
-  if (multiplier > 0.0) {
-    temperatureInC = calculateCatastrophe(multiplier, temperatureInC);
-    relativeHumidity = calculateCatastrophe(multiplier, relativeHumidity);
-    pressureHpa = calculateCatastrophe(multiplier, pressureHpa);
-    gasResistanceKOhms = calculateCatastrophe(multiplier, gasResistanceKOhms);
+  double percent = getCatastrophePercent();
+  if (percent > 0.01) {
+    temperatureInC = calculateValue(temperatureInC, TEMPERATURE_MAX, percent);
+    relativeHumidity = calculateValue(relativeHumidity, HUMIDITY_MIN, percent);
+    pressureHpa = calculateValue(pressureHpa, PRESSURE_MIN, percent);
+    gasResistanceKOhms = calculateValue(gasResistanceKOhms, AIR_QUALITY_MAX, percent);
   }
 
   // Publish data
@@ -134,28 +129,43 @@ void deviceNameHandler(const char *topic, const char *data) {
  *
  * Returns 0 if there is no catastrophe.
  */
-double getMultiplier() {
+double getCatastrophePercent() {
+  // Always 100 percent while holding;
+  if (catastropheHoldTimer > 0) {
+    uint32_t currentTime = Time.now();
+    if (currentTime > catastropheHoldTimer) {
+      catastropheHoldTimer = 0;
+    }
+    return 1.0;
+  }
+
+  // Now check if ramping up to a catastrophe
   if (catastropheTimer == 0) {
     return 0;
   }
 
-  double multiplier = 0.0;
+  double percent = 0.0;
   uint32_t currentTime = Time.now();
   if (currentTime < catastropheTimer) {
       uint32_t delta = catastropheTimer - currentTime;
-      multiplier = (double) delta / (double) CATASTROPHE_LENGTH;
+      percent = 1 - ((double) delta / (double) CATASTROPHE_LENGTH_SECONDS);
   } else {
       // Catastrophe over, reset the timer
       catastropheTimer = 0;
+      catastropheHoldTimer = currentTime + CATASTROPHE_HOLD_LENGTH_SECONDS;
   }
-  return multiplier;
+  return percent;
 }
 
 /*
  * Calculates the value based on the catastrophe multipler.
  */
-double calculateCatastrophe(double multipler, double value) {
-  return value + (multipler * value);
+double calculateValue(double initial, double target, double percent) {
+  if (initial > target) {
+    return initial - (percent * (initial - target));
+  } else {
+    return initial + (percent * (target - initial));
+  }
 }
 
 /*
@@ -167,7 +177,7 @@ int introduceCatastrophe(String cmd) {
     return 0;
   }
 
-  catastropheTimer = Time.now() + CATASTROPHE_LENGTH;
+  catastropheTimer = Time.now() + CATASTROPHE_LENGTH_SECONDS;
   return 1;
 }
 
